@@ -282,7 +282,7 @@ class CI_Session_mongo_driver extends CI_Session_driver implements SessionHandle
 
         return (
             $this->_mongo->{$this->_mongo_config['table']}->remove(
-                array('timestamp' => array('$lte' =>(int)time() - 1)),
+                array('timestamp' => array('$lte' =>(int)time() - $maxlifetime)),
                 array('w' => $this->_mongo_config['w'], 'j'=>$this->_mongo_config['j'])
             )
         )
