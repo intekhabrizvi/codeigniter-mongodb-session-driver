@@ -38,6 +38,12 @@ class CI_Session_mongo_driver extends CI_Session_driver implements SessionHandle
         // DO NOT forget this
         parent::__construct($params);
 
+        //mongo PECL driver loaded ??
+        if ( ! class_exists('Mongo') && ! class_exists('MongoClient'))
+        {
+            show_error("The MongoDB PECL extension has not been installed or enabled", 500);
+        }
+
         // Configuration & other initializations
         $CI =& get_instance();
 
