@@ -5,14 +5,18 @@ By default codeigniter comes with inbuild support for 4 different type of sessio
 
 To store session data in MongoDB collection, you can use this driver.
 
-###Prerequisite
+##Prerequisite
 1. Make sure you have PECL Mongo driver installed and enabled in PHP ini file. Please check https://pecl.php.net/package/mongo
 
-###Installation
+##Installation
 1. Download the repo
 2. put session_mongo.php file into YOUR_PROJECT_FOLDER/application/config/ folder
 3. update login details inside session_mongo.php file.
-4. put Session_mongo_driver.php inside folder YOUR_PROJECT_FOLDER/application/libraries/Session/drivers folder, if you do not have folder then do create. (Pay attention to folder name, its case sensitive)
+4. put Session_mongo_driver.php inside folder YOUR_PROJECT_FOLDER/application/libraries/Session/drivers folder, if you do not have those folder then do create. (Pay attention to folder name, its case sensitive)
 
-###Usage
+##Usage
 Simply use Codeiginiter's standard functions to access session data, driver will take care the rest.
+
+##License 
+Creative Commons Attribution 3.0 License.
+Codes are provided AS IS basis, i am not responsible for anything.
