@@ -1,295 +1,348 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * CodeIgniter Session Mongo Driver
+ * CodeIgniter Session MongoDB Driver
  *
- * @package	CodeIgniter
- * @subpackage	Libraries
- * @category	Sessions
- * @author	Intekhab Rizvi
- * @link	https://codeigniter.com/user_guide/libraries/sessions.html
+ * @package CodeIgniter
+ * @subpackage  Libraries
+ * @category    Sessions
+ * @author  Intekhab Rizvi
+ * @link    https://codeigniter.com/user_guide/libraries/sessions.html
  */
+class CI_Session_mongodb_driver extends CI_Session_driver implements SessionHandlerInterface {
 
-class CI_Session_mongo_driver extends CI_Session_driver implements SessionHandlerInterface
-{
     /**
      * DB object
      *
-     * @var	object
+     * @var object
      */
-    protected $_mongo;
-    protected $mongo_connect;
+    protected $_db;
 
     /**
-     * Private variable to hold MongoDB database configs
-     *
-     * @var	array
+     * Name of MongoDB database & collection holding all session data
+     * @var string
      */
-    protected $_mongo_config;
+    protected $db_name;
+    protected $collection;
+
+    /**
+     * Row exists flag
+     *
+     * @var bool
+     */
+    protected $_row_exists = FALSE;
+
+    // ------------------------------------------------------------------------
 
     /**
      * Class constructor
      *
-     * @param	array	$params	Configuration parameters
-     * @return	void
+     * @param   array   $params Configuration parameters
+     * @return  void
      */
     public function __construct(&$params)
     {
-        // DO NOT forget this
+
         parent::__construct($params);
 
-        //mongo PECL driver loaded ??
-        if ( ! class_exists('Mongo') && ! class_exists('MongoClient'))
+        if ( ! isset($this->_config['save_path']))
         {
-            show_error("The MongoDB PECL extension has not been installed or enabled", 500);
+            throw new Exception('Missing sess_save_path setting in application/config.php file.');
+            
         }
 
-        // Configuration & other initializations
-        $CI =& get_instance();
+        $dns = explode("|",$this->_config['save_path']);
 
-        $CI->config->load('session_mongo');
+        if ( ! is_array($dns) || count($dns) != 3)
+        {
+            throw new Exception('sess_save_path config setting has invalid value.');
+            
+        }
 
-        $this->_build_config($CI);
-
+        try
+        {
+            $this->_db = new MongoDB\Driver\Manager($dns[0]);
+            $this->db_name = $dns[1];
+            $this->collection = $dns[2];
+        }
+        catch (MongoDB\Driver\Exception\Exception $e)
+        {
+            throw new Exception("Unable to connect to MongoDB Server: {$e->getMessage()}");
+        }
     }
+
+    // ------------------------------------------------------------------------
 
     /**
-     * private method to prepare all mongodb related configs
+     * Open
      *
-     * @param	object	CI instance
-     * @return	boolean
+     * Initializes the database connection
+     *
+     * @param   string  $save_path  Table name
+     * @param   string  $name       Session cookie name, unused
+     * @return  bool
      */
-    private function _build_config($CI)
-    {
-        if(!empty($CI->config->item('session_mongo_location')))
-        {
-            $this->_mongo_config['location'] = $CI->config->item('session_mongo_location');
-        }
-        else
-        {
-            throw new Exception('MongoDB config missing, check session_mongo_location value.');
-        }
-
-        if(!empty($CI->config->item('session_mongo_port')))
-        {
-            $this->_mongo_config['port'] = $CI->config->item('session_mongo_port');
-        }
-        else
-        {
-            throw new Exception('MongoDB config missing, check session_mongo_port value.');
-        }
-
-        if(!empty($CI->config->item('session_mongo_db')))
-        {
-            $this->_mongo_config['db'] = $CI->config->item('session_mongo_db');
-        }
-        else
-        {
-            throw new Exception('MongoDB config missing, check session_mongo_db value.');
-        }
-
-        if(!empty($CI->config->item('session_mongo_user')))
-        {
-            $this->_mongo_config['username'] = $CI->config->item('session_mongo_user');
-        }
-        else
-        {
-            throw new Exception('MongoDB config missing, check session_mongo_user value.');
-        }
-
-        if(!empty($CI->config->item('session_mongo_password')))
-        {
-            $this->_mongo_config['password'] = $CI->config->item('session_mongo_password');
-        }
-        else
-        {
-            throw new Exception('MongoDB config missing, check session_mongo_password value.');
-        }
-
-        if(!empty($CI->config->item('session_mongo_collection')))
-        {
-            $this->_mongo_config['table'] = $CI->config->item('session_mongo_collection');
-        }
-        else
-        {
-            throw new Exception('MongoDB config missing, check session_mongo_collection value.');
-        }
-
-        if(!empty($CI->config->item('session_mongo_write_concerns')))
-        {
-            $this->_mongo_config['w'] = $CI->config->item('session_mongo_write_concerns');
-        }
-        else
-        {
-            throw new Exception('MongoDB config missing, check session_mongo_write_concerns value.');
-        }
-
-        if(!empty($CI->config->item('session_mongo_write_journal')))
-        {
-            $this->_mongo_config['j'] = $CI->config->item('session_mongo_write_journal');
-        }
-        else
-        {
-            throw new Exception('MongoDB config missing, check session_mongo_write_journal value.');
-        }
-    }
-
     public function open($save_path, $name)
     {
-        // Initialize storage mechanism (connection)
-        //prepare mongodb connection string
-        $dns = "mongodb://{$this->_mongo_config['location']}:{$this->_mongo_config['port']}/{$this->_mongo_config['db']}";
-
-        //perform connection.
-        $this->mongo_connect = new MongoClient($dns,
-            array('username'=>$this->_mongo_config['username'], 'password'=>$this->_mongo_config['password'])
-        );
-        if(empty($this->mongo_connect) || ! $this->mongo_connect)
+        if (empty($this->_db))
         {
-            return $this->_failure;
+            return $this->_fail();
         }
-        //when connected successfully, selected the database.
-        $this->_mongo = $this->mongo_connect->selectDB($this->_mongo_config['db']);
-        $this->_mongo = $this->mongo_connect->{$this->_mongo_config['db']};
 
         return $this->_success;
-
     }
+
+    // ------------------------------------------------------------------------
 
     /**
      * Read
      *
      * Reads session data and acquires a lock
      *
-     * @param	string	$session_id	Session ID
-     * @return	string	Serialized session data
+     * @param   string  $session_id Session ID
+     * @return  string  Serialized session data
      */
     public function read($session_id)
     {
         // Needed by write() to detect session_regenerate_id() calls
-        $this->_session_id = $session_id;
+            $this->_session_id = $session_id;
 
-        $wheres['_id'] = $session_id;
+            $where['_id'] = $this->_session_id;
 
-        $select['data'] = true;
-        $select['_id'] = true;
+            if ($this->_config['match_ip'])
+            {
+                $where['ip_address'] = $_SERVER['REMOTE_ADDR'];
+            }
 
-        if ($this->_config['match_ip'])
-        {
-            $wheres['ip_address'] = $_SERVER['REMOTE_ADDR'];
-        }
+            $options = array();
+            $options['projection'] = array('data'=>1, '_id'=>0);
+            $options['limit'] = 1;
 
-        $result = $this->_mongo->{$this->_mongo_config['table']}
-            ->findOne($wheres, $select);
+            $query = new MongoDB\Driver\Query($where, $options);
+            $cursor = $this->_db->executeQuery($this->db_name.".".$this->collection, $query);
+            $result = $cursor->toArray();
+            
+            if ( count($result) === 0)
+            {
+                // PHP7 will reuse the same SessionHandler object after
+                // ID regeneration, so we need to explicitly set this to
+                // FALSE instead of relying on the default ...
+                $this->_row_exists = FALSE;
+                $this->_fingerprint = md5('');
+                return '';
+            }
 
-        if ($result == null || count($result) == 0)
-        {
-            // PHP7 will reuse the same SessionHandler object after
-            // ID regeneration, so we need to explicitly set this to
-            // FALSE instead of relying on the default ...
-            $this->_row_exists = FALSE;
-            $this->_fingerprint = md5('');
-            return '';
-        }
-
-        $this->_fingerprint = md5($result['data']);
-        $this->_row_exists = TRUE;
-        return $result['data'];
-
+            $this->_fingerprint = md5($result[0]->data);
+            $this->_row_exists = TRUE;
+            unset($where, $options, $query, $cursor);
+            return $result[0]->data;
     }
 
+    // ------------------------------------------------------------------------
+
+    /**
+     * Write
+     *
+     * Writes (create / update) session data
+     *
+     * @param   string  $session_id Session ID
+     * @param   string  $session_data   Serialized session data
+     * @return  bool
+     */
     public function write($session_id, $session_data)
     {
+
         // Was the ID regenerated?
-        if ($session_id !== $this->_session_id)
+        if (isset($this->_session_id) && $session_id !== $this->_session_id)
         {
-             $this->_row_exists = FALSE;
+            $this->_row_exists = FALSE;
             $this->_session_id = $session_id;
         }
+
+        $bulk = new MongoDB\Driver\BulkWrite();
+        $writeConcern = new MongoDB\Driver\WriteConcern(MongoDB\Driver\WriteConcern::MAJORITY, 100);
 
         if ($this->_row_exists === FALSE)
         {
             $insert_data = array(
                 '_id' => $session_id,
                 'ip_address' => $_SERVER['REMOTE_ADDR'],
-                'timestamp' => time(),
+                'timestamp' => new MongoDB\BSON\UTCDateTime(),
                 'data' => $session_data
             );
 
-            if ($this->_mongo->{$this->_mongo_config['table']}->insert($insert_data, array('w' => $this->_mongo_config['w'], 'j'=>$this->_mongo_config['j'])))
+            $bulk->insert($insert_data);
+            
+            $write = $this->_db->executeBulkWrite($this->db_name.".".$this->collection, $bulk, $writeConcern);
+
+            if ($write->getInsertedCount() == 1)
             {
                 $this->_fingerprint = md5($session_data);
                 $this->_row_exists = TRUE;
                 return $this->_success;
             }
 
-            return $this->_failure;
+            return $this->_fail();
         }
 
-        $wheres['_id'] = $session_id;
-
+        $where['_id'] = $session_id;
         if ($this->_config['match_ip'])
         {
-            $wheres['ip_address'] = $_SERVER['REMOTE_ADDR'];
+            $where['ip_address'] = $_SERVER['REMOTE_ADDR'];
         }
 
-        $update_data = array('$set'=>array('timestamp' => time()));
+        $update_data = array('timestamp' => new MongoDB\BSON\UTCDateTime());
         if ($this->_fingerprint !== md5($session_data))
         {
             $update_data['data'] = $session_data;
         }
 
-        if ($this->_mongo->{$this->_mongo_config['table']}->update($wheres, $update_data, array('w' => $this->_mongo_config['w'], 'j'=>$this->_mongo_config['j'])))
+
+        $bulk->update($where, array('$set'=>$update_data), array('multi' => false));
+        $write = $this->_db->executeBulkWrite($this->db_name.".".$this->collection, $bulk, $writeConcern);
+
+        if ($write->getModifiedCount() == 1)
         {
             $this->_fingerprint = md5($session_data);
             return $this->_success;
         }
 
-        return $this->_failure;
+        return $this->_fail();
     }
 
+    // ------------------------------------------------------------------------
+
+    /**
+     * Close
+     *
+     * Releases locks
+     *
+     * @return  bool
+     */
     public function close()
     {
-        return ($this->mongo_connect->close())
-            ? $this->_success
-            : $this->_failure;
+        return $this->_success;
     }
 
+    // ------------------------------------------------------------------------
+
+    /**
+     * Destroy
+     *
+     * Destroys the current session.
+     *
+     * @param   string  $session_id Session ID
+     * @return  bool
+     */
     public function destroy($session_id)
     {
-        $wheres['_id'] = $session_id;
+        $where['_id'] = $session_id;
         if ($this->_config['match_ip'])
         {
-            $wheres['ip_address'] = $_SERVER['REMOTE_ADDR'];
-        }
+            $where['ip_address'] = $_SERVER['REMOTE_ADDR'];
+        }   
+        $options = array('limit'=>true);
+        $bulk = new MongoDB\Driver\BulkWrite();
+        $bulk->delete($where, $options);
 
-        if ( ! $this->_mongo->{$this->_mongo_config['table']}->delete($wheres))
+        $write = $this->_db->executeBulkWrite($this->db_name.".".$this->collection, $bulk);
+
+        /*if ( $write->getDeletedCount() == 0 )
         {
-            return $this->_failure;
-        }
-
+            return $this->_fail();
+        }*/
+        
         if ($this->close() === $this->_success)
         {
             $this->_cookie_destroy();
             return $this->_success;
         }
 
-        return $this->_failure;
+        return $this->_success;
     }
 
+    // ------------------------------------------------------------------------
+
+    /**
+     * Garbage Collector
+     *
+     * Deletes expired sessions
+     * Not required as document expiry will be taken by MongoDB collection TTL
+     *
+     * @param   int     $maxlifetime    Maximum lifetime of sessions
+     * @return  bool
+     */
     public function gc($maxlifetime)
     {
 
-        return (
-            $this->_mongo->{$this->_mongo_config['table']}->remove(
-                array('timestamp' => array('$lte' =>(int)time() - $maxlifetime)),
-                array('w' => $this->_mongo_config['w'], 'j'=>$this->_mongo_config['j'])
-            )
-        )
-            ? $this->_success
-            : $this->_failure;
+        return $this->_success;
     }
 
-}
+    // --------------------------------------------------------------------
 
-// application/libraries/Session/drivers/Session_mongo_driver.php:
+    /**
+     * Validate ID
+     *
+     * Checks whether a session ID record exists server-side,
+     * to enforce session.use_strict_mode.
+     *
+     * @param   string  $id
+     * @return  bool
+     */
+    public function validateId($id)
+    {
+        $where['_id'] = $id;
+
+        if ($this->_config['match_ip'])
+        {
+            $where['ip_address'] = $_SERVER['REMOTE_ADDR'];
+        }
+
+        $options = array();
+        $options['projection'] = array('_id'=>1);
+        $options['limit'] = 1;
+
+        $query = new MongoDB\Driver\Query($where, $options);
+        $cursor = $this->_db->executeQuery($this->db_name.".".$this->collection, $query);
+        $result = $cursor->toArray();
+
+        if ( count($result) === 1)
+        {
+            return true;
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------------
+
+    /**
+     * Get lock
+     *
+     * Acquires a lock, depending on the underlying platform.
+     * Not required, MongoDB's WiredTiger storage engine maintain read/write lock
+     * pretty well.
+     *
+     * @param   string  $session_id Session ID
+     * @return  bool
+     */
+    protected function _get_lock($session_id)
+    {
+        return true;
+    }
+
+    // ------------------------------------------------------------------------
+
+    /**
+     * Release lock
+     *
+     * Releases a previously acquired lock
+     * Not required, MongoDB's WiredTiger storage engine maintain read/write lock
+     * pretty well.
+     *
+     * @return  bool
+     */
+    protected function _release_lock()
+    {
+        return true;
+    }
+}
