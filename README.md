@@ -14,7 +14,7 @@
 2. put Session_mongo_driver.php inside folder `YOUR_PROJECT_FOLDER/application/libraries/Session/drivers` folder, if you didn't have those folders then please do create. (Pay attention to folder name, its case sensitive)
 3. Setting MongoDB login details in `YOUR_PROJECT_FOLDER/application/config.php` file, find variable name `$config['sess_save_path']` and set its value exactly like below (don't forgot to change the value with correct one)
 ```
-$config['sess_save_path'] = 'mongodb://USER_ID:PASSWORD@HOST:PORT/DATABASE_NAME|DATABASE_NAME|COLELCTION_NAME';
+$config['sess_save_path'] = 'mongodb://USER_ID:PASSWORD@HOST:PORT/DATABASE_NAME|DATABASE_NAME|COLLECTION_NAME';
 ```
 e.g
 ```
