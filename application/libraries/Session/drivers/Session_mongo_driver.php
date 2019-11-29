@@ -9,7 +9,7 @@
  * @author  Intekhab Rizvi
  * @link    https://codeigniter.com/user_guide/libraries/sessions.html
  */
-class CI_Session_mongodb_driver extends CI_Session_driver implements SessionHandlerInterface {
+class CI_Session_mongo_driver extends CI_Session_driver implements SessionHandlerInterface {
 
     /**
      * DB object
